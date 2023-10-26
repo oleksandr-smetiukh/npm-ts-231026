@@ -1,0 +1,6 @@
+{
+  "configuratorTest": "Configurator",
+  "buttonPrimaryText": "Primary Button Id",
+  "buttonSecondaryText": "Secondary Button Id",
+  "buttonLinkText": "Text Link Id"
+}

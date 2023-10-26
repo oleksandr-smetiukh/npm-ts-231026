@@ -1,0 +1,52 @@
+#If the trigger "main" is commented out, but "none" is not - this is the manual pipeline startup mode.
+#In the event that you need to start a pipeline on PR in the main branch,
+#you need to comment the trigger "none" and remove the # from "main"!
+
+trigger:
+  - main
+
+pool: build.zaelab.com
+
+#Be sure to enter your value instead of "projectname" --> variables: value: projectname
+
+variables:
+  - name: project
+    value: tuffshed-dev
+  - group: immersive_var
+  - group: tuffshed-dev
+
+stages:
+  - stage: BuildImage
+    displayName: Build Docker Image
+    jobs:
+      - job: BuildImage
+        steps:
+          - bash: |
+              aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ECR)
+              docker build \
+              --build-arg REACT_APP_LOGIK_API=$(REACT_APP_LOGIK_API) \
+              --build-arg REACT_APP_LOGIK_TOKEN=$(REACT_APP_LOGIK_TOKEN) \
+              --build-arg REACT_APP_LOGIK_PRODUCT_ID=$(REACT_APP_LOGIK_PRODUCT_ID) \
+              --build-arg REACT_APP_USER_NAME=$(REACT_APP_USER_NAME) \
+              --build-arg REACT_APP_PASSWORD=$(REACT_APP_PASSWORD) \
+              -t $(project).$(Build.BuildId) .
+              docker tag $(project).$(Build.BuildId) $(ECR_REPOSITORY):$(project).$(Build.BuildId)
+              docker push $(ECR_REPOSITORY):$(project).$(Build.BuildId)
+
+  - stage: Deploy
+    displayName: Deploy Docker Image in k8s cluster
+    jobs:
+      - job: Deploy
+        steps:
+          - bash: |
+              export PATH=$PATH:/usr/local/bin
+              helm version --short
+              kubectl version --short --client
+              export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s" \
+              $(aws sts assume-role \
+              --role-arn $(ROLE) \
+              --role-session-name AWSCLI-ADO-Session \
+              --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" \
+              --output text))
+              aws eks --region $(AWS_REGION) update-kubeconfig --name zc-EKS
+              helm upgrade $(project) ./chart --install --namespace immersive --set project=$(project) --set ECRrepo=$(ECR_REPOSITORY):$(project).$(Build.BuildId)
